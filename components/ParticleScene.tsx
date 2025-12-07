@@ -1,10 +1,9 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { AppState, ShapeType } from '../types';
-import { generateHeart, generateFlower, generateSaturn, generateText, generateEmoji, convertRawPoints } from '../utils/geometry';
-import { generateShapePoints } from '../services/geminiService';
+import { generateHeart, generateFlower, generateSaturn, generateText, generateEmoji } from '../utils/geometry';
 
 // Fix for missing R3F types in strict environments
 declare global {
@@ -15,24 +14,35 @@ declare global {
       meshStandardMaterial: any;
       ambientLight: any;
       pointLight: any;
+      // HTML elements
+      div: any;
+      span: any;
+      video: any;
+      button: any;
+      svg: any;
+      path: any;
+      circle: any;
+      h1: any;
+      p: any;
+      label: any;
+      form: any;
+      input: any;
     }
   }
 }
 
 interface SceneProps {
   appState: AppState;
-  aiShapePrompt?: string; // Prompt for AI generation
-  setAiShapePrompt?: (p: string) => void;
 }
 
-const Particles: React.FC<{ appState: AppState; aiGeneratedPoints?: THREE.Vector3[] }> = ({ appState, aiGeneratedPoints }) => {
+const Particles: React.FC<{ appState: AppState }> = ({ appState }) => {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   
   // Store target positions for each particle
   const particleCount = 3000;
   
-  // Generate shapes
+  // Generate static shapes once
   const shapes = useMemo(() => {
     return {
       [ShapeType.HEART]: generateHeart(particleCount),
@@ -45,11 +55,12 @@ const Particles: React.FC<{ appState: AppState; aiGeneratedPoints?: THREE.Vector
 
   // Determine current target points
   const targetPoints = useMemo(() => {
-    if (appState.currentShape === ShapeType.AI_GENERATED && aiGeneratedPoints) {
-      return aiGeneratedPoints;
+    if (appState.currentShape === ShapeType.AI_GENERATED && appState.aiPoints) {
+      return appState.aiPoints;
     }
+    // Fallback to Heart if AI points are missing or we are in another mode
     return shapes[appState.currentShape as keyof typeof shapes] || shapes[ShapeType.HEART];
-  }, [appState.currentShape, shapes, aiGeneratedPoints]);
+  }, [appState.currentShape, shapes, appState.aiPoints]);
 
   useFrame((state, delta) => {
     if (!meshRef.current) return;
@@ -60,28 +71,25 @@ const Particles: React.FC<{ appState: AppState; aiGeneratedPoints?: THREE.Vector
     const time = state.clock.getElapsedTime();
 
     // --- ROTATION LOGIC ---
-    // If hand detected, map position to rotation.
-    // X (0..1) -> Rotate Y axis
-    // Y (0..1) -> Rotate X axis
     if (detected) {
-      // Map 0..1 to -PI..PI (Full rotation range usually too much, limit to -1.5..1.5)
+      // Map 0..1 to -PI..PI
       const targetRotY = (position.x - 0.5) * 3; 
       const targetRotX = (position.y - 0.5) * 1.5;
 
-      // Smoothly lerp current rotation to target
       meshRef.current.rotation.y = THREE.MathUtils.lerp(meshRef.current.rotation.y, targetRotY, 0.1);
       meshRef.current.rotation.x = THREE.MathUtils.lerp(meshRef.current.rotation.x, targetRotX, 0.1);
     } else {
       // Idle Animation: Spin slowly
       meshRef.current.rotation.y += delta * 0.2;
-      // Return X rotation to neutral
       meshRef.current.rotation.x = THREE.MathUtils.lerp(meshRef.current.rotation.x, 0, 0.05);
     }
 
     // --- PARTICLE DYNAMICS ---
     for (let i = 0; i < particleCount; i++) {
+      // Safety check for array length
       const target = targetPoints[i % targetPoints.length];
-      
+      if (!target) continue;
+
       // Get current matrix
       meshRef.current.getMatrixAt(i, dummy.matrix);
       dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
@@ -99,7 +107,7 @@ const Particles: React.FC<{ appState: AppState; aiGeneratedPoints?: THREE.Vector
       dummy.position.y += (destY - dummy.position.y) * 0.1;
       dummy.position.z += (destZ - dummy.position.z) * 0.1;
       
-      // Scale particles based on distance slightly (breathing effect)
+      // Scale particles
       const pScale = (0.02 + Math.random() * 0.01) * (detected ? 1.2 : 1.0);
       dummy.scale.set(pScale, pScale, pScale);
       
@@ -123,20 +131,7 @@ const Particles: React.FC<{ appState: AppState; aiGeneratedPoints?: THREE.Vector
   );
 };
 
-const ParticleScene: React.FC<SceneProps> = ({ appState, aiShapePrompt }) => {
-  const [aiPoints, setAiPoints] = React.useState<THREE.Vector3[] | undefined>(undefined);
-
-  // Effect to trigger AI generation if prompt changes and mode is AI
-  useEffect(() => {
-    if (appState.currentShape === ShapeType.AI_GENERATED && aiShapePrompt) {
-      const fetchShape = async () => {
-        const points = await generateShapePoints(aiShapePrompt, 3000);
-        setAiPoints(convertRawPoints(points));
-      };
-      fetchShape();
-    }
-  }, [appState.currentShape, aiShapePrompt]);
-
+const ParticleScene: React.FC<SceneProps> = ({ appState }) => {
   return (
     <div className="w-full h-full absolute inset-0 bg-black">
       <Canvas camera={{ position: [0, 0, 5], fov: 60 }}>
@@ -144,7 +139,7 @@ const ParticleScene: React.FC<SceneProps> = ({ appState, aiShapePrompt }) => {
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} intensity={1} />
         <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-        <Particles appState={appState} aiGeneratedPoints={aiPoints} />
+        <Particles appState={appState} />
       </Canvas>
     </div>
   );

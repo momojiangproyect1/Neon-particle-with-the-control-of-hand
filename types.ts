@@ -26,4 +26,6 @@ export interface AppState {
   particleColor: string;
   particleCount: number;
   handData: HandData;
+  aiPoints?: Vector3[];
+  isGenerating?: boolean;
 }

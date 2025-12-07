@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppState, ShapeType } from '../types';
 
@@ -10,17 +9,13 @@ interface UIProps {
 
 const UI: React.FC<UIProps> = ({ appState, setAppState, onAiPrompt }) => {
   const [aiInput, setAiInput] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
   const [showControls, setShowControls] = useState(true);
-  // Add a small delay to show "Initializing" if hands aren't detected immediately
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
-    // If we detect hands, we are definitely done initializing
     if (appState.handData.detected) {
       setIsInitializing(false);
     }
-    // Timeout fallback for initialization state UI
     const timer = setTimeout(() => setIsInitializing(false), 8000);
     return () => clearTimeout(timer);
   }, [appState.handData.detected]);
@@ -33,15 +28,10 @@ const UI: React.FC<UIProps> = ({ appState, setAppState, onAiPrompt }) => {
     setAppState(prev => ({ ...prev, particleColor: e.target.value }));
   };
 
-  const handleAiSubmit = async (e: React.FormEvent) => {
+  const handleAiSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!aiInput.trim()) return;
-    
-    setIsGenerating(true);
-    setAppState(prev => ({ ...prev, currentShape: ShapeType.AI_GENERATED }));
-    // Notify parent to start generation
     onAiPrompt(aiInput);
-    setTimeout(() => setIsGenerating(false), 2000); // Simple timeout for UI feedback
   };
 
   return (
@@ -120,16 +110,21 @@ const UI: React.FC<UIProps> = ({ appState, setAppState, onAiPrompt }) => {
              />
              <button 
                type="submit"
-               disabled={isGenerating}
+               disabled={appState.isGenerating}
                className="absolute right-2 top-2 p-1 rounded-md text-purple-400 hover:text-purple-300 disabled:opacity-50"
              >
-               {isGenerating ? (
+               {appState.isGenerating ? (
                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                ) : (
                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                )}
              </button>
            </form>
+           {appState.currentShape === ShapeType.AI_GENERATED && !appState.isGenerating && (
+             <div className="text-[10px] text-purple-300 mt-1 pl-1">
+               AI Mode Active
+             </div>
+           )}
         </div>
 
         {/* Color Picker */}

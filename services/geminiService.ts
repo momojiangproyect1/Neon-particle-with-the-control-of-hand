@@ -1,7 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 // Initialize Gemini
-// Note: API Key is injected via process.env.API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
@@ -9,46 +8,46 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
  * Returns an array of [x, y, z] coordinates.
  */
 export const generateShapePoints = async (description: string, targetCount: number = 3000): Promise<number[][]> => {
-  // We ask the AI for a smaller number of structure-defining points (anchors)
-  // to ensure a fast, valid JSON response. We will then "upsample" these to the targetCount.
-  const anchorCount = 100; 
+  const anchorCount = 120; 
 
   try {
     const model = 'gemini-2.5-flash';
     
-    console.log(`Generating shape "${description}" with ~${anchorCount} anchors...`);
+    console.log(`[Gemini] Generating shape "${description}"...`);
 
+    // We simply ask for JSON without strict schema validation to avoid 500s on complex nested arrays.
+    // The prompt is engineered to ensure the format is correct.
     const response = await ai.models.generateContent({
       model: model,
-      contents: `Generate a geometric 3D point cloud for a shape described as: "${description}".
-      Return exactly ${anchorCount} points. 
-      The points must be normalized within a range of -1 to 1 for x, y, and z axes.
-      Distribute points to outline the distinctive features of the shape clearly.`,
+      contents: `You are a 3D geometry engine. Create a point cloud for the shape: "${description}".
+      
+      Requirements:
+      1. Return raw JSON only. No markdown formatting.
+      2. The JSON must be an object with a single key "points".
+      3. "points" must be an array of ${anchorCount} arrays.
+      4. Each item must be exactly 3 numbers: [x, y, z].
+      5. Coordinates must be normalized between -1.0 and 1.0.
+      6. Distribute points to clearly define the volume and surface of the requested shape.
+      
+      Example output format:
+      { "points": [[0.1, 0.2, 0.3], [-0.5, 0.1, 0.0], ...] }`,
       config: {
         responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            points: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.ARRAY,
-                items: { type: Type.NUMBER }, // [x, y, z]
-                description: "A point in 3D space [x, y, z]",
-              },
-              description: `List of exactly ${anchorCount} 3D coordinates`,
-            },
-          },
-          required: ["points"],
-        },
       },
     });
 
-    let jsonString = response.text || "";
+    const rawText = response.text || "";
+    console.log("[Gemini] Raw response received");
+
+    // Robust JSON extraction: Find the first '{' and the last '}'
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd = rawText.lastIndexOf('}');
     
-    // Clean potential Markdown formatting
-    if (jsonString.includes("```")) {
-      jsonString = jsonString.replace(/```json\n?/g, "").replace(/```/g, "");
+    let jsonString = "";
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      jsonString = rawText.substring(jsonStart, jsonEnd + 1);
+    } else {
+      throw new Error("No JSON object found in response");
     }
 
     const data = JSON.parse(jsonString);
@@ -57,13 +56,13 @@ export const generateShapePoints = async (description: string, targetCount: numb
       const anchors = data.points;
       const finalPoints: number[][] = [];
       
-      // Upsample: Fill the requested particle count by spawning points near the anchors
+      // Upsample logic
       for (let i = 0; i < targetCount; i++) {
-        // Cycle through anchors
         const anchor = anchors[i % anchors.length];
         
-        // Add random jitter to create volume/surface texture
-        // 0.05 jitter creates a "fuzzy" volume around the structure
+        // Ensure anchor is valid [x,y,z]
+        if (!Array.isArray(anchor) || anchor.length < 3) continue;
+
         const jitter = 0.08; 
         
         finalPoints.push([
@@ -73,14 +72,15 @@ export const generateShapePoints = async (description: string, targetCount: numb
         ]);
       }
       
+      console.log(`[Gemini] Successfully generated ${finalPoints.length} points`);
       return finalPoints;
     }
     
-    throw new Error("Invalid or empty point data in response");
+    throw new Error("Invalid structure: missing 'points' array");
 
   } catch (error) {
-    console.error("Gemini Shape Generation Error:", error);
-    // Fallback to a random sphere if error
+    console.error("[Gemini] Shape Generation Error:", error);
+    // Fallback Sphere
     return Array.from({ length: targetCount }, () => {
       const u = Math.random();
       const v = Math.random();
