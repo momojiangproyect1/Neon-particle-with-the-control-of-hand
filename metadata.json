@@ -1,0 +1,7 @@
+{
+  "name": "Gemini 3D Hand Particles",
+  "description": "Interactive 3D particle system controlled by hand gestures and Gemini AI generated shapes.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
